@@ -1,0 +1,426 @@
+Package compiler;
+
+
+Helpers
+
+    all = [0 .. 0xFFFF];
+    ht  = 0x0009;
+    lf  = 0x000a;
+    ff  = 0x000c;
+    cr  = 0x000d;
+    sp  = ' ';
+    line_terminator = lf | cr | cr lf;
+    eol = [lf + cr];
+    not_eol = [all - eol];
+
+    white_space = (sp |  ht | ff | line_terminator)*;
+
+    underscore = '_';
+    apostrophe = ''';
+    quote = '"';
+    backslash = '\';
+    dollar = '$';
+    double_dollar = dollar dollar;
+    not_dollar = [all - dollar];
+
+    digit = ['0' .. '9'];
+    lowercase = ['a' .. 'z'];
+    uppercase = ['A' .. 'Z'];
+    letter = uppercase | lowercase;
+    ch =[all - [[[[quote + cr] +lf] + '\']+''']];
+    str=[all - [[[[quote + cr] +lf] + '\']+''']];
+
+    hex = 'x' (digit | ['a' .. 'f']) (digit | ['a' .. 'f']);
+    echr = 'n' | 't' | ''' | '"' | '\' | '0' | hex;
+    esc_char = '\' echr;
+    single_echr = 'n' | 't' | ''' | '"' | '\' | '0';
+
+
+
+    equal = '=';
+    diff = '#';
+    lt = '<';
+    gt = '>';
+    leq = '<=';
+    geq = '>=';
+
+
+Tokens
+
+    white_space = white_space;
+
+    comment = dollar (([not_dollar - eol])* (not_eol*)) line_terminator;
+    comments = double_dollar ((not_dollar*) (dollar not_dollar)?)*  double_dollar;
+
+    key_and='and';
+    key_char='char';
+    key_div='div';
+    key_do='do';
+    key_else='else';
+    key_fun='fun';
+    key_if='if';
+
+    key_int='int';
+    key_mod='mod';
+    key_not='not';
+    key_nothing='nothing';
+    key_or='or';
+    key_ref='ref';
+    key_return='return';
+
+    key_then='then';
+    key_var='var';
+    key_while='while';
+
+    assign_op='<-';
+    plus = '+';
+    minus = '-';
+    times = '*';
+
+    comparison = equal | diff | lt | gt | leq | geq;
+
+    comma = ',';
+    colon = ':';
+    semicolon = ';';
+    lbrack='[';
+    rbrack=']';
+    lpar='(';
+    rpar=')';
+    lbrace='{';
+    rbrace='}';
+
+    const_integer = digit+;
+    const_char = apostrophe (ch | sp | single_echr) apostrophe;
+    string_literal = quote (str | sp | esc_char)* quote;
+    id = (underscore | letter) (underscore |letter | digit)*;
+    errnum=digit+ (underscore | letter)+;
+
+
+Ignored Tokens
+
+    white_space, comment, comments;
+
+
+Productions
+    program     {->program}     =
+                {f_def}  func_def                               {-> New program.f_def(func_def.local_def)}
+
+    ;
+    stmnt       {-> stmnt}      =
+                {empty_stmnt}   semicolon                       {-> New stmnt.empty_stmnt(semicolon)}       |
+                {assign_stmnt}  assignment semicolon            {->assignment.stmnt}                        |
+                {block}         block                           {-> block.stmnt}                            |
+                {func_call}     func_call semicolon             {->New stmnt.func_call(func_call.expr)}     |
+                {if_stmnt}      if_stmnt                        {-> if_stmnt.stmnt}                         |
+                {while_stmnt}   while                           {-> while.stmnt}                            |
+                {return}        key_return expr? semicolon      {-> New stmnt.return(Null)}
+    ;
+
+
+    assignment  {-> stmnt}      =
+                {assign}        l_value assign_op expr          {-> New stmnt.assign(l_value.expr,expr)}
+    ;
+
+
+    if_stmnt    {->stmnt}       =
+                {if}            key_if cond key_then stmnt
+                                                                {-> New stmnt.if(cond,stmnt)}               |
+                {if_else}       key_if cond key_then else_stmnt key_else stmnt
+                                                                {-> New stmnt.if_else(cond,else_stmnt.stmnt,stmnt)}
+    ;
+
+
+    else_stmnt  {->stmnt}       =
+                {empty_stmnt}   semicolon                       {-> New stmnt.empty_stmnt(semicolon)}       |
+                {assign_stmnt}  assignment semicolon            {-> assignment.stmnt}                       |
+                {block}         block                           {-> block.stmnt}                            |
+                {func_call}     func_call semicolon             {->New stmnt.func_call(func_call.expr)}     |
+                {if_else}       if_else_stmnt                   {-> if_else_stmnt.stmnt}                    |
+                {while_else}    while_else                      {-> while_else.stmnt}                       |
+                {return_sth}    key_return expr? semicolon      {-> New stmnt.return_sth(Null)}
+    ;
+
+
+    if_else_stmnt  {->stmnt}    =
+                   {if_if}      key_if cond key_then [if]:else_stmnt key_else [else]:else_stmnt
+                                                                {->New stmnt.if_if(cond,if.stmnt,else.stmnt)}
+    ;
+
+
+    while       {-> stmnt}      =
+                {while_stmnt}   key_while cond key_do stmnt
+                                                                {-> New stmnt.while_stmnt(cond,stmnt)}
+    ;
+
+    while_else  {->stmnt}       =
+                {w_else}        key_while cond key_do else_stmnt
+                                                                {->New stmnt.w_else(cond,else_stmnt.stmnt)}
+    ;
+
+
+    block       {-> stmnt}      =
+                {block}         lbrace stmnt* rbrace            {-> New stmnt.block([stmnt])}
+    ;
+
+
+    local_def   {->local_def}   =
+                {lfunc_def}     func_def                        {-> func_def.local_def}         |
+                {lfunc_decl}    func_decl                       {-> func_decl.local_def}        |
+                {lvar_def}      var_def                         {-> var_def.local_def}
+        ;
+
+
+    func_def    {-> local_def}  =
+                {func_def}      header local_def* block
+                                                                {-> New local_def.func_def(header,[local_def], [block.stmnt])}
+    ;
+
+    var_def     {->local_def}   =
+                {variable_def}  key_var id more_id*  colon type semicolon
+                                                                {-> New local_def.variable_def(id,[more_id.expr], type)}
+    ;
+
+
+    func_decl   {-> local_def}  =
+                {f_headercolon} header semicolon                {-> New local_def.f_headercolon(header)}
+    ;
+
+
+
+    header      {->header}      =
+                {f_header}      key_fun id lpar fpar_def_list? rpar colon ret_type
+                                                                {-> New header.f_header(id, [fpar_def_list.fpar_def],ret_type)}
+    ;
+
+
+    type        {->type}        =
+                {array}         data_type brackets*             {-> New type.array(data_type, [brackets.expr])}
+    ;
+
+
+    ret_type    {->ret_type}    =
+                {nothing}       key_nothing                     {-> New ret_type.nothing(key_nothing)}          |
+                {data_type}     data_type                       {-> New ret_type.data_type(data_type)}
+    ;
+
+
+
+    fpar_def    {-> fpar_def}   =
+                {f_definition}  key_ref? id more_id* colon fpar_type
+                                                                {-> New fpar_def.f_definition(Null, id, [more_id.expr], fpar_type.data_type)}
+    ;
+
+
+    more_fpardef{-> fpar_def}   =
+                {moref_definition}  semicolon fpar_def          {-> fpar_def}
+    ;
+
+    fpar_def_list{-> fpar_def*}=
+                {list}          fpar_def more_fpardef*           {-> [fpar_def.fpar_def ,more_fpardef.fpar_def]}
+    ;
+
+    more_id     {-> expr}       =
+                {f_id}          comma id                  {-> New expr.f_id(id)}
+    ;
+
+
+    fpar_type   {-> data_type}  =
+                {f_type}        data_type empty_brack? brackets*
+                                                                {-> New data_type.f_type(data_type,[brackets.expr])}
+    ;
+
+
+    data_type   {->data_type}   =
+                {integer}       key_int                         {-> New data_type.integer(key_int)}             |
+                {character}     key_char                        {-> New data_type.character(key_char)}
+    ;
+
+
+    empty_brack {->}            =
+                {empty_bracks}  lbrack rbrack                   {->}
+    ;
+
+
+    brackets    {-> expr}       =
+                {full_bracks}   lbrack const_integer rbrack
+                                                                {-> New expr.full_bracks(const_integer)}
+    ;
+
+
+    arg         {-> arg}        =
+                {expr}          expr                            {-> New arg.expr(expr)}
+    ;
+
+
+    more_args   {->arg}         =
+                {args}          comma arg                       {-> arg.arg}
+    ;
+
+
+    arg_list    {->arg*}        =
+                {arg}           arg more_args*                  {-> [arg.arg,more_args.arg]}
+    ;
+
+
+    func_call   {-> expr}       =
+                {f_call }       id lpar arg_list? rpar
+                                                                {-> New expr.f_call(id, [arg_list.arg])}
+    ;
+
+
+    cond        {-> cond}       =
+                {or}            cond key_or cond2               {-> New cond.or(cond, cond2.cond)}              |
+                {more}          cond2                           {-> cond2.cond}
+    ;
+
+
+    cond2       {-> cond}       =
+                {and}           cond2 key_and cond3             {-> New cond.and(cond2.cond, cond3.cond)}       |
+                {even_more}     cond3                           {-> cond3.cond}
+
+    ;
+
+
+    cond3       {->cond}        =
+                               {op} operation                   {-> operation.cond}                             |
+                               {not} key_not cond3              {-> New cond.not(cond3.cond)}                   |
+                               {paren} lpar cond rpar           {-> cond}
+    ;
+
+
+    operation   {-> cond}       =
+                {op}            [left]:expr comparison [right]:expr
+                                                                {->New cond.op(left.expr, right.expr)}
+    ;
+
+
+   expr                         =
+          {term}                term                            {-> term.expr}                                  |
+          {plus}                expr plus term                  {-> New expr.plus(expr, term.expr)}             |
+          {minus}               expr minus term                 {-> New expr.minus(expr, term.expr)}
+   ;
+
+
+   term     {-> expr}           =
+            {factor}            factor                          {-> factor.expr}                                |
+            {times}             term times factor               {-> New expr.times(term.expr, factor.expr)}     |
+            {div}               term key_div factor             {-> New expr.div(term.expr, factor.expr)}       |
+            {mod}               term key_mod factor             {-> New expr.mod(term.expr, factor.expr)}
+   ;
+
+
+   sign     {->sign}            =
+            {pos}               plus                            {-> New sign.pos(plus)}                         |
+            {neg}               minus                           {-> New sign.neg(minus) }
+   ;
+
+
+   factor   {-> expr}           =
+          {p_expr}              lpar expr rpar                  {-> expr}                                       |
+          {const_int}           const_integer                   {-> New expr.const_int(const_integer)}          |
+          {const_char}          const_char                      {-> New expr.const_char(const_char)}            |
+          {l_value}             l_value                         {-> l_value.expr}                               |
+          {f_call }             func_call                       {-> func_call.expr }                            |
+          {signed}              sign factor                     {-> New expr.signed(sign.sign,factor.expr)}
+   ;
+
+
+   l_value {-> expr}            =
+          {identifier}          id                              {-> New expr.identifier(id)}                     |
+          {string}              string_literal                  {-> New expr.string(string_literal)}             |
+          {array}               l_value  lbrack expr rbrack     {-> expr}
+   ;
+
+
+Abstract Syntax Tree
+
+    program                     =
+                {f_def}         local_def
+    ;
+
+
+    stmnt                       =
+                {assign}        [left]:expr [right]:expr        |
+                {func_call}     expr                            |
+                {if}            cond stmnt                      |
+                {if_else}       cond [left]:stmnt [right]:stmnt |
+                {while_stmnt}   cond stmnt                      |
+                {return}        expr?                           |
+                {if_if}         cond [left]:stmnt [right]:stmnt |
+                {w_else}        cond stmnt                      |
+                {return_sth}    expr?                           |
+                {empty_stmnt}   semicolon                       |
+                {block}         stmnt*
+    ;
+
+
+    local_def                   =
+                {func_def}      header local_def* stmnt*        |
+                {f_headercolon} header                          |
+                {variable_def}  id  expr*   type
+    ;
+
+
+    header                      =
+                {f_header}      id [ list]: fpar_def*  ret_type
+    ;
+
+
+    type                        =
+               {array}          data_type expr*
+    ;
+
+
+    ret_type                    =
+                {nothing}       key_nothing                 |
+                {data_type}     data_type
+    ;
+
+
+    fpar_def                    =
+                {f_definition}  key_ref? id expr* data_type
+    ;
+
+
+    data_type                   =
+                {integer}       key_int                     |
+                {character}     key_char                    |
+                {f_type}        data_type expr*
+    ;
+
+
+    arg                         =
+                {expr}          expr
+    ;
+
+
+    cond                        =
+                {op}            [left]:expr  [right]:expr   |
+                {and}           [one]:cond [two]:cond       |
+                {or}            [one]:cond [two]:cond       |
+                {not}           cond
+    ;
+
+
+    expr                        =
+                {identifier}    id                                         |
+                {f_id}          id                                         |
+                {string}        string_literal                             |
+                {array}         [array_id]:expr  [array_idx]:expr          |
+                {const_int}     const_integer                              |
+                {const_char}    const_char                                 |
+                {signed}        sign expr                                  |
+                {times}         [multiplier]:expr [multiplicand]:expr      |
+                {div}           [dividend]:expr [divisor]:expr             |
+                {mod}           [dividend]:expr [divisor]:expr             |
+                {plus}          [added1]:expr [added2]:expr                |
+                {minus}         [reduced]:expr [subtrahend]:expr           |
+                {f_call }       id arg*                                    |
+                {full_bracks}   const_integer
+    ;
+
+
+    sign                        =
+               {pos}            plus        |
+               {neg}            minus
+    ;

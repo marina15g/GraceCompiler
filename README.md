@@ -5,8 +5,6 @@
 
 * Γεωργοπούλου Μαρίνα sdi1300030 https://github.com/marina15g/
 * Spiropali Mertiko sdi1300274 https://github.com/ublek
-> 
-
 
 ----------
 
